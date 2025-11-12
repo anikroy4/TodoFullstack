@@ -10,7 +10,14 @@ const userSchema = new mongoose.Schema({
     }, 
     password: {
         type: String,
-    }
+    },
+    refreshToken: {
+        type: String,
+    },
+    isVerified: {
+        type: Boolean
+    },
+
 })
 
 
