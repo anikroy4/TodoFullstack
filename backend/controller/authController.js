@@ -116,13 +116,137 @@ let verifyController= async(req,res)=>{
 }
     
 
-let loginController=(req,res)=>{
-    res.send("ami login krse");
+let loginController= async(req,res)=>{
+
+    const {email,password}=req.body;
+
+    if(!email){
+        return res.send({error:"Email is required"});
+    }
+    if(!password){
+        return res.send({error:"Password is required"});
+    }
+
+    const userExists=await User.findOne({email:email});
+    if(!userExists){
+        return res.send({error:"User not found"});
+    }
+    if(!userExists.isVerified){
+        return res.send({error:"Please verify your email"});
+    }
+    const isPasswordMatch= await bcrypt.compare(password,userExists.password);
+    if(!isPasswordMatch){
+        return res.send({error:"Invalid password"});
+    }
+    const accessToken=generateAccessToken(userExists);
+    const refreshToken=generateRefreshToken(userExists);
+    userExists.refreshToken=refreshToken;
+    await userExists.save();
+    res.cookie('refreshToken',refreshToken,{
+        httpOnly:true,
+        Secure:false,
+        sameSite:'strict',
+        maxAge:30*24*60*60*1000 //30 days
+
+    });
+    res.send({message:"Login successful",
+        accessToken:accessToken,
+        username:userExists.username,
+        email:userExists.email
+    });
+
     
+    
+}
+
+const refreshController= async(req,res)=>{
+    const token= req.cookies.refreshToken;
+    if(!token){
+        return res.send({error:"Token not found"});
+    }
+    const userExists=await User.findOne({refreshToken:token});
+    if(!userExists){
+        return res.send({error:"Invalid token"});
+    }
+    jwt.verify(token,process.env.REFRESH_TOKEN,(err,decoded)=>{
+        if(err){
+            return res.send({error:"Invalid token"});
+        }
+        const accessToken=generateAccessToken(userExists);
+        res.send({accessToken});
+    })
+
+
+   
+
+} 
+
+
+const forgotPasswordController=async(req,res)=>{
+    const {email}=req.body;
+    if(!email){
+        return res.send({error:"Email is required"});
+    }
+    const userExists=await User.findOne({email:email});
+    if(!userExists){
+        return res.send({error:"User not found"});
+    }
+    
+    const resetToken=jwt.sign({id:userExists._id},process.env.ACCESS_SECRET,{expiresIn:'15m'});
+    const resetLink=`${process.env.CLIENT_URL}/reset-password/${resetToken}`;
+    try {
+        await transporter.sendMail({
+            from:process.env.EMAIL_USER,
+            to:userExists.email,
+            subject:"Reset your password",
+            html:`<h4>Hello ${userExists.username}, please reset your password</h4>
+                <p>Please reset your password by clicking the following link:</p>
+                <a href="${resetLink}">Reset Now</a>
+                <p>This link will expire in 15 minutes.</p>
+                <p>If you did not request this, please ignore this email.</p>`
+        })
+        res.send({message:"please check your email to reset your password"});
+        
+    } catch (error) {
+
+        res.send({ error: "Forgot password failed. Please try again later." });
+
+    }
+}
+
+
+
+const resetPasswordController=async(req,res)=>{
+       const {token}=req.params;
+       const {password}=req.body;
+
+       try {
+            const decoded=jwt.verify(token,process.env.ACCESS_SECRET);
+
+            const userExists=await User.findById(decoded.id);
+            if(!userExists){
+                return res.send({error:"User not found"});
+            }
+           
+            userExists.password=await bcrypt.hash(password,10);
+            await userExists.save();
+            res.send({message:"Password reset successful"});
+            
+            
+       } catch (error) {
+        res.send({error:"Invalid token or token expired"});
+        
+       }
+
+        
 }
 
 module.exports={
     registrationController,
     verifyController,
-    loginController
+    loginController, 
+    refreshController,
+    forgotPasswordController,
+    resetPasswordController
+
 }
