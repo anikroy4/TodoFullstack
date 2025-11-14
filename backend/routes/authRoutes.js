@@ -3,7 +3,7 @@ const { registrationController, loginController, refreshController,verifyControl
 const router=express.Router();    
 
 router.post('/registration', registrationController)
-router.post('/verify/:token', verifyController)
+router.get('/verify/:token', verifyController)
 
 router.post('/login', loginController)
 router.post('/refresh', refreshController)
